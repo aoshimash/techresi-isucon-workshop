@@ -16,12 +16,9 @@ Eitaro
 
 ---
 # 負荷試験・ベンチマーカーとは
-## 負荷試験
+- 負荷試験
 Webサービスに対して機械的に多数のリクエストを送信して負荷を与え、レスポンスを得るためにかかった時間などの結果を確認する試験。
-## ベンチマーカー
-負荷試験を実行し、その結果を数値として出力するようなソフトウェア。
-
-![center](./figs/tuningCycle.png)
+![70% center](./figs/tuningCycle.png)
 
 ---
 # private-isuの場合
@@ -31,6 +28,8 @@ Webサービスに対して機械的に多数のリクエストを送信して�
 - RDBMSはMySQL
 - ストレージはmemcached
 - Webサーバ・リバースプロキシはnginx
+---
+# private-isuの場合
 起動方法
 1. AWS EC2
 2. Docker
@@ -40,11 +39,11 @@ Webサービスに対して機械的に多数のリクエストを送信して�
 MySQLの初期データは初回起動時にGitHub Releaseから取得される
 ```
 $cdwebapp/sql
-$curlLOhttps://github.com/catatsuy/privateisu/releases/download/img/dump.sql.bz2
+$curl https://github.com/catatsuy/privateisu/releases/download/img/dump.sql.bz2
 $bunzip2dump.sql.bz2$cd..
 $dockercomposeup
 (略)
-webappmysql1|[Entrypoint]running/dockerentrypointinitdb.d/dump.sql#<初期データ取り込み
+webappmysql1 | [Entrypoint]running/dockerentrypointinitdb.d/dump.sql#<初期データ取り込み
 (略)
 webappmysql1|20220110T02:31:14.579477Z0[System][MY010931][Server]/usr/sbin/mysqld:readyforconnections.Version:'8.0.27'socket:'/var/lib/mysql/mysql.sock'port:3306MySQLCommunityServerGPL.
 ```
@@ -59,9 +58,10 @@ EC2の場合
 Dockerの場合
 `webapp/etc/nginx/conf.d/default.conf`
 に上記の変更を加えてnginxの再起動（restart or reload）
+
 ---
 # nginxのアクセスログの集計
-## 利用できる変数
+利用できる変数
 | 変数名 | 意味 |
 | ---- | ---- | 
 | time_iso8601 | リクエストの終了時刻（ISO 8601形式） | 
