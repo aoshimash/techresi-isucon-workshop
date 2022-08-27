@@ -1,0 +1,3 @@
+[submodule "ch4/private-isu-enshu"]
+	path = ch4/private-isu-enshu
+	url = git@github.com:tmsausa/private-isu-enshu.git
