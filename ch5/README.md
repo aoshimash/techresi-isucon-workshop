@@ -44,9 +44,7 @@ sudo mysql -uroot -proot
 
 ## 前回のおさらい
 
-pt-query-digestで遅いクエリを見つけ出し、インデックスをはることで遅いクエリを改善することができた
-
-初回のベンチマークでは `SELECT * FROM \'comments\` `
+pt-query-digestで遅いクエリを見つけ出し、インデックスをはることでスコアを改善することができた
 
 
 ## 今日やること
