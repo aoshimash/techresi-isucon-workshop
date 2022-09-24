@@ -656,7 +656,7 @@ sudo apt install golang-go
 次に`isucon`ユーザーになってアプリを再ビルドする。
 
 ```command
-sud su isucon
+sudo su isucon
 cd /home/isucon/private_isu/webapp/golang
 mv app.go app.go.original
 curl -O https://raw.githubusercontent.com/aoshimash/techresi-isucon-workshop/main/ch5/enshu/sample/preload/app.go
@@ -807,7 +807,7 @@ https://github.com/aoshimash/techresi-isucon-workshop/blob/main/ch5/enshu/sample
 `isucon`ユーザーになってアプリを再ビルドする。
 
 ```command
-sud su isucon
+sudo su isucon
 cd /home/isucon/private_isu/webapp/golang
 mv app.go app.go.preload
 curl -O https://raw.githubusercontent.com/aoshimash/techresi-isucon-workshop/main/ch5/enshu/sample/join/app.go
@@ -879,7 +879,7 @@ https://github.com/aoshimash/techresi-isucon-workshop/blob/main/ch5/enshu/sample
 実行したい場合は、`isucon`ユーザーになってアプリを再ビルドする。
 
 ```command
-sud su isucon
+sudo su isucon
 cd /home/isucon/private_isu/webapp/golang
 mv app.go app.go.join
 curl -O https://raw.githubusercontent.com/aoshimash/techresi-isucon-workshop/main/ch5/enshu/sample/interpolateParams/app.go
