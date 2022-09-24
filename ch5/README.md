@@ -441,19 +441,528 @@ SELECT * FROM `users` WHERE `id` = 932\G
 
 `Exec time`をみると、95%のクエリが144マイクロ秒以下なので1クエリごとでみると高速だが、110984回も呼び出されているため5番目に負荷の大きいクエリになっている。
 
-このクエリは [makePosts関数](https://github.com/catatsuy/private-isu/blob/096802b1d54481105624d7010c531e3b6328b170/webapp/golang/app.go#L174)で呼び出されているが、この関数の中では、
+このクエリは [makePosts関数](https://github.com/catatsuy/private-isu/blob/096802b1d54481105624d7010c531e3b6328b170/webapp/golang/app.go#L174)で呼び出されているので、この関数の中身を詳しくみていく。
 
-1. [`comments`テーブルから特定の`post_id`のコメントの最新3件を取得し](https://github.com/catatsuy/private-isu/blob/096802b1d54481105624d7010c531e3b6328b170/webapp/golang/app.go#L188)
-2. [そのコメントに対して、さらにuser情報を引く](https://github.com/catatsuy/private-isu/blob/096802b1d54481105624d7010c531e3b6328b170/webapp/golang/app.go#L193-L198)
+ちなみに、この関数を読むのに重要な `Post` と `Comment` の型はこんなかんじ。
 
-という処理が実装されている。つまり、最初の1回のSQL実行に対して、ループの中で何倍ものuser情報を求めるクエリが発生している。
+```golang
+type Post struct {
+	ID           int       `db:"id"`
+	UserID       int       `db:"user_id"`
+	Imgdata      []byte    `db:"imgdata"`
+	Body         string    `db:"body"`
+	Mime         string    `db:"mime"`
+	CreatedAt    time.Time `db:"created_at"`
+	CommentCount int
+	Comments     []Comment
+	User         User
+	CSRFToken    string
+}
+```
+
+``` golang
+type Comment struct {
+	ID        int       `db:"id"`
+	PostID    int       `db:"post_id"`
+	UserID    int       `db:"user_id"`
+	Comment   string    `db:"comment"`
+	CreatedAt time.Time `db:"created_at"`
+	User      User
+}
+```
+
+`makePosts`関数にコメント追加してみた。
+
+
+```golang
+// Post構造体のスライスを受け取り、不足しているフィールド情報を付け足す関数
+// args:
+//  - results: (フィールド情報が不足している)Postのスライス
+//  - csrfToken: CSRFトークン
+//  - allComments: コメントを全件取得するかしないかのboolean (falseの場合は最新3コメントのみ取得)
+// return:
+//  - posts: (フィールド情報が追加された)Postのスライス
+func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, error) {
+	var posts []Post
+
+	for _, p := range results {
+    // Postの全コメント数(CommentCount)を取得
+		err := db.Get(&p.CommentCount, "SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?", p.ID)
+		if err != nil {
+			return nil, err
+		}
+
+    // Postのコメント(Comment)から最新3つを取得　ただし、allCommentsがtrueの場合は全コメントを取得
+		query := "SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC"
+		if !allComments {
+			query += " LIMIT 3"
+		}
+		var comments []Comment
+		err = db.Select(&comments, query, p.ID)
+		if err != nil {
+			return nil, err
+		}
+
+    // さらに、上で取得したCommentの不足しているフィールド(User)情報を取得
+    /*
+    *  ここがN+1
+    */
+		for i := 0; i < len(comments); i++ {
+			err := db.Get(&comments[i].User, "SELECT * FROM `users` WHERE `id` = ?", comments[i].UserID)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		// Commentスライスの並び順を逆にする(新しい順から古い順に)
+		for i, j := 0, len(comments)-1; i < j; i, j = i+1, j-1 {
+			comments[i], comments[j] = comments[j], comments[i]
+		}
+
+		p.Comments = comments
+
+    // Postの `User` フィールドの値を取得
+		err = db.Get(&p.User, "SELECT * FROM `users` WHERE `id` = ?", p.UserID)
+		if err != nil {
+			return nil, err
+		}
+
+    // PostのCSRFTokenフィールドをセット
+		p.CSRFToken = csrfToken
+
+    // PostのUserフィールドのDelFlgフィールドが0の場合はpostに追加
+    // (削除フラグが立っているUserのPostは表示しない)
+		if p.User.DelFlg == 0 {
+			posts = append(posts, p)
+		}
+
+    // 1ページあたりに表示するPost数以上は処理を続けない
+		if len(posts) >= postsPerPage {
+			break
+		}
+	}
+
+	return posts, nil
+}
+```
+
+つまり、コメント一覧（N件）を下記のクエリで取得したのち、
+
+```sql
+SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC
+```
+
+そのN件に対してさらにループを回して、次のクエリを発行してしまっている。
+
+```sql
+SELECT * FROM `users` WHERE `id` = ?
+```
 
 このように、1回のクエリで得た結果の件数(N個)に対して、関連する情報を集めるため、N回以上のクエリを実行してしまうことでアプリケーションのレスポンス速度の低下やデータベースの負荷の原因になることをN+1問題という。
 
+
 ### N+1問題の見つけ方
 
-APMやプロファイラ、フレームワークの機能でN+1に警告を出してくれたりするらしい。
-しかし、今回はpt-query-digestの結果を見て実行数が多いクエリから探していく。
+今回はpt-query-digestの結果を見て実行数が多いクエリから探したが、APMやプロファイラ、フレームワークの機能でN+1に警告を出してくれたりするらしい。（ぜひこの辺をちゃんと使えるようにしたい）
 
-また、N+1を発見してもそれがボトルネックになっているのかは、確認が必要である。あまり呼ばれていない関数や速度が求められていない場所の高速化に時間をかけないように注意。
+また、N+1を発見してもそれがボトルネックになっているのかは、確認が必要である。あまり呼ばれていない関数や速度が求められていない場所の高速化に時間をかけないように注意。（ちなみに、`~/pt-query-digest.log4`の結果を見てもらってもわかるとおり、`makePosts`関数は現状ボトルネックにはなっていない。N+1問題の例として都合が良かったので今回説明に使ってるだけ。）
 
+### N+1問題の解消方法いろいろ
+
+- キャッシュを使う
+  - memcashedやRedisなどにデータベース情報をキャッシュとして保存する
+  - キャッシュサーバーを参照するだけではN+1自体は解決されないが、データベースの負荷を減らすことができる
+  - 大規模なWebサービスで活用される
+  - Chapter7で詳しくやるので今回は具体的な説明は省略
+- プリロードを使う
+  - ループで回して毎回クエリ発行していた内容を`IN`句でまとめて1回のクエリにして発行する。
+- JOINを使う
+  - 2つ以上のテーブルをJOINを利用して一度のSQLで参照する。
+
+### プリロードを用いたN+1の解決
+
+N回ループさせてしまっていたコマンドをIN句でまとめて1個のクエリにすればDBへのアクセス数が減って高速化できるという話。
+
+具体的なクエリで書くと、
+
+```sql
+SELECT * FROM `users` WHERE `id` = 1
+SELECT * FROM `users` WHERE `id` = 2
+SELECT * FROM `users` WHERE `id` = 3
+```
+
+みたいになっていたクエリを`IN`句を使って次のようにまとめたい。
+
+```sql
+SELECT * FROM `users` WHERE `id` IN (1,2,3)
+```
+
+N+1になっていたこの部分を、
+
+```golang
+for i := 0; i < len(comments); i++ {
+	err := db.Get(&comments[i].User, "SELECT * FROM `users` WHERE `id` = ?", comments[i].UserID)
+	if err != nil {
+		return nil, err
+	}
+}
+```
+
+次のようにクエリをまとめる関数として切り出す。
+
+```golang
+func preloadUsers(ids []int) (map[int]User, error) {
+	// 結果を入れるmapを用意
+	users := map[int]User{}
+
+	if len(ids) == 0 {
+		return users, nil
+	}
+
+	query, params, err := sqlx.In(
+		"SELECT * FROM `users` WHERE `id` IN (?)",
+		ids,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// クエリを発行してユーザー情報を取得
+	us := []User{}
+	err = db.Select(&us, query, params...)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, u := range us {
+		users[u.ID] = u
+	}
+
+	return users, nil
+}
+```
+
+書き換えた`app.go`の全文はこちら。
+https://github.com/aoshimash/techresi-isucon-workshop/blob/main/ch5/enshu/sample/preload/app.go
+
+これを実行するために、まずはgolangをインストールする。
+
+```command
+sudo add-apt-repository ppa:longsleep/golang-backports
+sudo apt update
+sudo apt install golang-go
+```
+
+次に`isucon`ユーザーになってアプリを再ビルドする。
+
+```command
+sud su isucon
+cd /home/isucon/private_isu/webapp/golang
+mv app.go app.go.original
+curl -O https://raw.githubusercontent.com/aoshimash/techresi-isucon-workshop/main/ch5/enshu/sample/preload/app.go
+./setup.sh
+exit
+```
+
+`isu-go`を再起動
+
+```
+sudo systemctl restart isu-go
+```
+
+ログローテートしてベンチマークまでをワンライナーで
+
+```
+sudo mv /var/log/mysql/mysql−slow.log /var/log/mysql/mysql−slow.log.bak4 && sudo systemctl restart mysql && sleep 20 && /home/isucon/private_isu.git/benchmarker/bin/benchmarker -u /home/isucon/private_isu.git/benchmarker/userdata -t http://localhost && sudo pt-query-digest /var/log/mysql/mysql−slow.log > ~/pt-query-digest.log5
+```
+
+pt-query-digestの結果を確認
+
+```
+less ~/pt-query-digest.log5
+```
+
+Countが減ったはず。
+
+```
+
+# Query 7: 781.67 QPS, 0.06x concurrency, ID 0x396201721CD58410E070DA9421CA8C8D at byte 138830748
+# This item is included in the report because it matches --limit.
+# Scores: V/M = 0.00
+# Time range: 2022-09-22T16:40:46 to 2022-09-22T16:41:49
+# Attribute    pct   total     min     max     avg     95%  stddev  median
+# ============ === ======= ======= ======= ======= ======= ======= =======
+# Count          8   49245
+# Exec time      4      4s    16us    18ms    81us   176us   357us    28us
+# Lock time     22    56ms       0     3ms     1us     1us    20us     1us
+# Rows sent      0  48.09k       1       1       1       1       0       1
+# Rows examine   0  48.09k       1       1       1       1       0       1
+# Query size     1   1.78M      36      39   37.89   36.69    0.15   36.69
+# String:
+# Databases    isuconp
+# Hosts        localhost
+# Users        isuconp
+# Query_time distribution
+#   1us
+#  10us  ################################################################
+# 100us  #####
+#   1ms  #
+#  10ms  #
+# 100ms
+#    1s
+#  10s+
+# Tables
+#    SHOW TABLE STATUS FROM `isuconp` LIKE 'users'\G
+#    SHOW CREATE TABLE `isuconp`.`users`\G
+# EXPLAIN /*!50100 PARTITIONS*/
+SELECT * FROM `users` WHERE `id` = 174\G
+```
+
+ちなみに、IN句に値を渡しすぎることには注意が必要。多すぎると、
+- クエリのサイズが大きくなりすぎてエラーになる
+  - `max_allowed_packet`で設定されている。（MySQL8.0のデフォルトは64MB）
+- 狙ったインデックスが使われなくなる
+  - インデックスではなく、フルスキャンした方が早いと判断されることがある
+  - `eq_range_index_dive_limit`で設定されている。(MySQL8.0のデフォルトは200)
+
+
+### JOINを使ったN+1の解消
+
+JOIN（INNER　JOIN）を使い、`comments`テーブルと`users`テーブルを結合して一つのテーブルにまとめてデータを抽出する。
+
+`comments`テーブル
+
+```
++------------+-----------+------+-----+-------------------+-------------------+
+| Field      | Type      | Null | Key | Default           | Extra             |
++------------+-----------+------+-----+-------------------+-------------------+
+| id         | int       | NO   | PRI | NULL              | auto_increment    |
+| post_id    | int       | NO   | MUL | NULL              |                   |
+| user_id    | int       | NO   | MUL | NULL              |                   |
+| comment    | text      | NO   |     | NULL              |                   |
+| created_at | timestamp | NO   |     | CURRENT_TIMESTAMP | DEFAULT_GENERATED |
++------------+-----------+------+-----+-------------------+-------------------+
+```
+
+`users`テーブル
+
+```
++--------------+--------------+------+-----+-------------------+-------------------+
+| Field        | Type         | Null | Key | Default           | Extra             |
++--------------+--------------+------+-----+-------------------+-------------------+
+| id           | int          | NO   | PRI | NULL              | auto_increment    |
+| account_name | varchar(64)  | NO   | UNI | NULL              |                   |
+| passhash     | varchar(128) | NO   |     | NULL              |                   |
+| authority    | tinyint(1)   | NO   |     | 0                 |                   |
+| del_flg      | tinyint(1)   | NO   |     | 0                 |                   |
+| created_at   | timestamp    | NO   |     | CURRENT_TIMESTAMP | DEFAULT_GENERATED |
++--------------+--------------+------+-----+-------------------+-------------------+
+```
+
+`comments`テーブルの`user_id`と`users`テーブルの`id`を紐付けて次のような一つのテーブルにまとめる。
+
+```
++-------------------+
+| Field             |
++-------------------+
+| id                |
+| post_id           |
+| user_id           |
+| comment           |
+| created_at        |
+| user.id           |
+| user.account_name |
+| user.passhash     |
+| user.authority    |
+| user.del_flg      |
+| user.created_at   |
++-------------------+
+```
+
+というのをコードで書くとこうなる。
+
+```golang
+query := "SELECT " +
+	"c.id AS `id`, " +
+	"c.post_id AS `post_id`, " +
+	"c.user_id AS `user_id`, " +
+	"c.comment AS `comment`, " +
+	"c.created_at AS `created_at`, " +
+	"u.id AS `user.id`, " +
+	"u.account_name AS `user.account_name`, " +
+	"u.passhash AS `user.passhash`, " +
+	"u.authority AS `user.authority`, " +
+	"u.del_flg AS `user.del_flg`, " +
+	"u.created_at AS `user.created_at` " +
+	"FROM `comments` c JOIN `users` u ON c.user_id = u.id WHERE `post_id` = ? ORDER BY `created_at` DESC"
+if !allComments {
+	query += " LIMIT 3"
+}
+```
+
+書き換えた`app.go`の全文はこちら。
+https://github.com/aoshimash/techresi-isucon-workshop/blob/main/ch5/enshu/sample/join/app.go
+
+
+`isucon`ユーザーになってアプリを再ビルドする。
+
+```command
+sud su isucon
+cd /home/isucon/private_isu/webapp/golang
+mv app.go app.go.preload
+curl -O https://raw.githubusercontent.com/aoshimash/techresi-isucon-workshop/main/ch5/enshu/sample/join/app.go
+./setup.sh
+exit
+```
+
+`isu-go`を再起動
+
+```
+sudo systemctl restart isu-go
+```
+
+ログローテーションとベンチの実行
+
+```
+sudo mv /var/log/mysql/mysql−slow.log /var/log/mysql/mysql−slow.log.bak5 && sudo systemctl restart mysql && sleep 20 && /home/isucon/private_isu.git/benchmarker/bin/benchmarker -u /home/isucon/private_isu.git/benchmarker/userdata -t http://localhost && sudo pt-query-digest /var/log/mysql/mysql−slow.log > ~/pt-query-digest.log6
+```
+
+### データベース以外のN+1問題
+
+データベース以外にも、キャッシュ、他のマイクロサービス、外部サービスなどにループ中でアクセスして情報を取得するような場合もN+1問題が発生することがある。
+パフォーマンスに影響がある場合は必要な情報をまとめて取得するAPIを用意するなどの対策が必要。
+
+
+### データベース周辺の最適化
+
+#### FORCE INDEX と STRAIGHT_JOIN
+
+JOINクエリを利用した場合、使用しているMySQLのバージョンやテーブルのインデックスによっては、想定とは異なる実行計画が取られることがある。
+そういった場合は、
+
+- どのインデックスを使うのか`FORCE INDEX`でヒントを与える
+- `STRAIGHT_JOIN`でクエリに書いた順に処理を実行させる
+
+#### 必要なカラムだけ取得しての効率化
+
+`SELECT *` と書くとテーブルの全カラムの情報を取得する。
+特定カラムに大きなデータが入っている場合は（ISUCON11の画像データとか）、必要に応じてカラムを指定してデータを取得することで通信コストを減らすことができる。
+
+また、取り扱いに注意が必要なデータ(大きなサイズのデータ以外にも個人情報など)のカラムはINVISIBLE属性を与えることで、`SELECT *`の結果に表示させなくすることもできる。
+
+#### プリペアドステートメントとGo言語における接続設定
+
+変数埋め込み可能な形のSQLをあらかじめ作成してDB側で解析・キャッシュしておき、クライアントから変数のみを送ってSQLを実行するプリペアドステートメントという機能がある。
+
+同じSQLを何度も発行する場合は、
+
+- 実行計画がキャッシュされているので効率がよい
+- クエリとパラメタを分離されているのでSQLインジェクション対策になる
+
+といったメリットがある。
+
+しかし、Webアプリケーションのように発行するクエリの種類が多い場合は、プリペアドステートメントによるキャッシュが効率よく利用されない。
+結果として、SQLを発行するごとに、「プリペアドステートメントを準備する PREPARE」と「プリペアドステートメントを開放する CLOSE」のクエリが必要になり通信回数が増えて効率が落ちてしまいがち。
+
+`go-sql-driver/mysql` ではデフォルトでプリペアドステートメント機能がデフォルトで有効になっている。無効にするには、次のように `interpolateParams`というパラメタを設定する。
+
+```
+db, err := sql.Open("mysql", "isuconp:@tcp(127.0.0.1:3306)/isuconp?interpolateParams=true")
+```
+
+無効にする場合は、実際のデータベースの負荷やセキュリティの問題はないかを検討する必要がある。
+
+書き換えた`app.go`の全文はこちら。
+https://github.com/aoshimash/techresi-isucon-workshop/blob/main/ch5/enshu/sample/interpolateParams/app.go
+
+
+実行したい場合は、`isucon`ユーザーになってアプリを再ビルドする。
+
+```command
+sud su isucon
+cd /home/isucon/private_isu/webapp/golang
+mv app.go app.go.join
+curl -O https://raw.githubusercontent.com/aoshimash/techresi-isucon-workshop/main/ch5/enshu/sample/interpolateParams/app.go
+./setup.sh
+exit
+```
+
+`isu-go`を再起動
+
+```
+sudo systemctl restart isu-go
+```
+
+```
+sudo mv /var/log/mysql/mysql−slow.log /var/log/mysql/mysql−slow.log.bak6 && sudo systemctl restart mysql && echo "Restarting mysql" && sleep 20 && echo "Running benchmark" && /home/isucon/private_isu.git/benchmarker/bin/benchmarker -u /home/isucon/private_isu.git/benchmarker/userdata -t http://localhost && sudo pt-query-digest /var/log/mysql/mysql−slow.log > ~/pt-query-digest.log7
+```
+
+こうすると、Rank Query ID から `ADMIN`命令が消えてる。
+
+#### データベースとの接続の永続化と最大接続数
+
+TCP接続はコストが高いので、一度接続したコネクションをすぐに切断せずに永続化して使い回すことも考えられる。
+
+接続を制御するパラメタは、アプリケーション側とデータベース側の両方にあり、
+
+アプリケーション(Go)側は、
+
+- `db.SetMaxOpenConns(8)`: アプリケーションからデータベースへの最大コネクション数（デフォルトは0 つまり無限大）
+- `db.SetMaxIdleConns(8)`: idle状態の接続の保持件数（デフォルト2）
+
+データベース側は、
+
+- `max_connections`: 同時接続数（デフォルト151）
+
+がある。MySQLはスレッドモデルで実装されており、１つの接続に対して１つのスレッドが割り当てられる。
+スレッドあたりのメモリ使用量は比較的小さく、接続しただけのidle状態ではCPUへの負荷はほぼないため、データベース側の`max_connecitons`はアプリケーションサーバーが複数台構成のときは数千以上の大きな値が設定される。
+
+安定したサービスを実現するためには、アプリケーション側の`MaxOpenConns`や`MaxIdleConns`を設定し、リソースを使いすぎず、再接続によるコストが小さくなる値を負荷試験をしながら探していく。
+
+
+### コラム
+
+#### IO負荷が高いデータベースの場合
+
+インデックス不足やN＋１問題の場合はCPU使用率が高くなりがちだった。
+CPU使用率のうち、io-waitの数値が高い場合はCPUの処理上でデータを読み込み・書き込みを待っている時間が多い場合は、データの読み込み回数を減らしたり、ストレージへの書き込み回数を減らすことが必要になる。
+
+#### 読み取りの高速化 - データサイズの確認・Buffer Poolの活用
+
+MySQLでは、読み込んだデータ及びインデックスをメモリ上に確保するInnoDB Buffer Poolという機能があり、これを活用することで読み込みでのI/O負荷を減らすことができる。[データベース専用サーバーであれば、物理メモリの80%程度をこれに割り当てると良いとされている](https://dev.mysql.com/doc/refman/8.0/en/innodb-parameters.html#sysvar_innodb_buffer_pool_size)。また、InnoDB Buffer Poolを活用する場合はOSによるディスクキャッシュと二重でメモリを使ってしまわないように、`innodb_flush_method=O_DIRECT`を設定しておく。
+
+MySQLのデータのサイズは `/var/lib/mysql/*.ibd` の合計で手軽に見積もることができる。
+
+#### 更新の高速化 - パフォーマンスとリスクとのバランス
+
+##### fsync
+
+ディスクキャッシュ上に書いたデータをストレージデバイスに同期させるOSの命令をfsyncという。
+fsyncはストレージデバイスの種類にもよるが、ミリ秒単位の時間がかかる遅い処理である。
+
+更新を高速化するためには、同期的なfsyncをやめて、OSが行う非同期のフラッシュ操作に任せることが考えられる。
+OSによる同期は数秒から数十秒おきに行われるため、コミットからフラッシュが行われる間にOSがダウンしたりするとその間のデータを失うことになるため、サービスレベルを考慮して行う必要があるが、ISUCONなら無茶していいと思う。
+
+コミット時の動作はMySQL(InnoDB)では、`innodb_flush_log_at_trx_commit`という設定で制御できる。
+
+- 0: 更新データを1秒おきにログに書き、フラッシュはしない。
+- 1（デフォルト値）: コミットごとに更新データをログに書き、ログをフラッシュする。
+- 2: コミットのたびにログに書き、1秒ごとにログをフラッシュする。
+
+ISUCONならパフォーマンス最優先の0でよさそう。
+
+#### バイナリログ
+
+MySQL8.0ではバイナリログ（操作イベントのログ）がデフォルトで有効になっている。
+バイナリログは、MySQLにおいて複数のサーバに非同期的にデータを複製し、リードレプリカを作成するレプリケーションおよび高可用性構成には必要不可欠。
+でも、一時的な処理や冗長化構成が不要なISCUONなら必要ないため、無効化すればその分ストレージへの書き込み量を減らすことができる。
+
+```
+disable-log-bin = 1
+```
+
+
+## 参考
+
+- [達人が教えるWebパフォーマンスチューニング](https://gihyo.jp/book/2022/978-4-297-12846-3)
+- [クラスタインデックスとセカンダリインデックス](https://dev.mysql.com/doc/refman/8.0/ja/innodb-index-types.html)
