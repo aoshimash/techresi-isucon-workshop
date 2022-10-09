@@ -1,24 +1,24 @@
 # techresi-isucon-workshop/ch6/enshu/private-isu
 
-## Requirements
+「Chapter6 リバースプロキシの利用」の勉強会で使う環境用のcloud-init。
 
-- multipass
+## デプロイ
+
+（eichan-serverでの利用を想定しているが、[networkインターフェイスが追加できるmultipass環境](https://multipass.run/docs/additional-networks)があれば使える。）
+
+以下のコマンドでappサーバー3台とbenchサーバー1台の合計4台のVMが立ち上がる。
+
 
 ```
-brew install multipass
+./create-vm.sh
 ```
 
-## Usage
-
-
-### VMの起動
-
-以下のコマンドで、アプリケーションサーバーもベンチマークサーバーも同梱されたVMを立てる。
-リソースのミニマムはCPU=2,disk=16G,memory=2G程度。CPUコアが多いと構築にかかる時間が短縮できる。
+次のコマンドで立ち上げたVMのステータスとIPを確認できる。
 
 ```
-multipass launch --name private-isu-ch6 --cpus 4 --disk 16G --mem 4G --cloud-init standalone.cfg 20.04
+multipass list
 ```
+<<<<<<< HEAD
 (2CPUだと手元の環境で構築したときに30分以上かかったので、4CPUくらいがいいと思う。)
 
 cloud-initの処理には時間がかかるため、上記のコマンドはタイムアウトすると思うが、VM内部では処理が進んでいるので問題ない。
@@ -85,3 +85,5 @@ multipass delete private-isu-ch6
 
 こちら(https://github.com/matsuu/cloud-init-isucon/tree/main/private-isu)の `standalone.cfg` に今回の演習に必要なパッケージを追加しただけ。
 
+=======
+>>>>>>> 24a16add3e5fe1431668cd37b02c2b32a695289d
