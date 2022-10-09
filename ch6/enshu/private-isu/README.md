@@ -84,3 +84,4 @@ multipass delete private-isu-ch6
 ## Reference
 
 こちら(https://github.com/matsuu/cloud-init-isucon/tree/main/private-isu)の `standalone.cfg` に今回の演習に必要なパッケージを追加しただけ。
+
