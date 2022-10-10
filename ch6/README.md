@@ -14,10 +14,10 @@
 
 ## 2. nginxの基礎
 ### 2.1 C10K問題とは
-
+１リクエスト１プロセス方式のAppache HTTP ServerなどのWebサーバソフトウェアとクライアントの通信において、クライアント数が1万台程度になると、32bit Linuxではプロセス数は32767が上限であり、コンテキストスイッチコストが増大してしまうため、ハードウェア性能に余裕があるにも関わらず、レスポンス性能が大きく劣化してしまう。この対策として、１プロセスで複数のリクエストを処理し、イベント駆動方式、非同期処理を取り入れたnginxが生まれた。
 ### 2.2 nginxについて
 nginxは、Webサーバやロードバランサ、リバースプロキシなどの機能を持つオープンソースソフトウェアである。
-Webサーバとしては、Microsoft Internet Information Services（IIS）Apache HTTP Serverと並んで最も広く利用されている。
+Webサーバとしては、Microsoft Internet Information Services（IIS）、Apache HTTP Serverと並んで最も広く利用されている。
 nginxには主に以下の３つの使い方がある。
    - 静的なコンテンツのWebサーバ
    - 動的なコンテンツのWebサーバ
@@ -49,8 +49,8 @@ nginxは内部で機能ごとのモジュールに分かれており、コンパ
 | /usr/lib/systemd/system/nginx.service | systemdの設定ファイルで起動スクリプトに当たる。|
 | /var/cache/nginx | キャッシュファイルが置かれるディレクトリ |
 | /var/log/nginx | ログファイルが置かれるディレクトリ |
-
-**設定ファイル**
+  
+**設定ファイル**  
 /etc/nginxディレクトリには以下のようなファイルが配置されている。
 | ファイル名 | 内容 |
 | -- | -- |
@@ -71,8 +71,34 @@ nginxのログファイルにはアクセスログとエラーログの２種類
 デフォルトではアクセスログが`/var/log/nginx/access.log`、エラーログが`/var/log/nginx/error.log`に設定されている。
 これらのログファイルはloglotateプログラムで毎晩ローテートされ、古いログは圧縮されていく。ファイル名の末尾には日付を示す文字列がつく。gzipで圧縮され、52日分以上のログファイルが貯まると、自動的に古いものから削除されていく。設定ファイルは`/etc/logrotate.d/nginx`。
 
-### 2.5 nginxの設定確認
-``` /etc/nginx/nginx.conf
+### 2.6 nginxの設定確認
+`/etc/nginx/nginx.conf`を確認する。  
+** mainコンテキスト **
+```
+user nginx;
+worker_processes 1;
+
+error_log /var/log/nginx/error.log warn;
+pid       /var/run/nginx.pid;
+``` 
+- ユーザー名：nginxのworkerが動作するユーザー名。変更する必要はないが、ファイルやディレクトリをこのユーザーからアクセスできるようパーミッション設定する必要がある。
+- workerプロセス数：nginxのworkerプロセスはシングルスレッドで動作するためCPUはプロセスにつき１つしか使われない。コア数程度にすると良い。`worker_processes auto`としておくとコア数と同数のworkerを起動する。
+- エラーログ：`error_log /var/log/nginx/error.log warn`でログの出力先とログレベルを指定する。軽いものから順にdebug, info, notice, warn, crit, alert, emergとなっており、errorと指定すると、error, crit, alert, emergのログを出力する。
+- プロセスID：`pid /var/run/nginx.pid`はプロセスIDを記述したファイルの配置先であり、nginxが使っているシグナルを送るときに使う。
+
+デーモンプロセスに送信できるシグナル
+| シグナル | 内容 |
+| -- | :--: |
+| TERM/INT | masterおよびworkerを終了する。処理中のリクエストがあっても強制的に終了 |
+| QUIT | masterおよびworkerを終了する。処理中のリクエストの終了を待って終了 |
+| HUP | 設定ファイルの再読み込み。新たなworkerを起動させて、古いworkerをgraceful shutdown |
+| USR1 | ログファイルを開き直す |
+| USR2 | 新たな実行ファイルを開き直す。masterのみ |
+| WINCH | workerをgraceful shutdown。workerの異常終了。デバッグのための機能 |
+
+例えば、`systemctl stop nginx`はmasterプロセスにQUITとTERMシグナルを送る。`nginx -s reopen`はmasterプロセスにUSR1シグナルを送る。
+
+```
 include /etc/nginx/conf.d/*.conf;
 include /etc/nginx/sites-enabled/*;
 ```
@@ -89,6 +115,22 @@ server {
     }
 }
 ```
+
+## 3. nginxを活用した高速化手法
+性能に影響する設定項目に以下のようなものがある。
+* 同時接続数の設定
+  * worker_connections: workerごとの最大接続数。クライアントとバックエンドの接続を合わせた数で、リバースプロキシを設定した場合は１つのアクセスで2つの接続を消費する。
+  * worker_processes: workerのプロセス数を指定。autoを指定でコア数と同等になる。
+  * worker_rlimit_nofile: 同時に利用できるファイルディスクリプタ数に関するOSによる制限値を変更する。
+  nginxの同時接続数の最大値は`worker_processes * worker_connections`で求められる。
+* OSの制限値  
+sysctlによるカーネルの設定値fs.file-maxは１つのプロセスが同時に開けるファイルディスクリプ多数の最大値の設定。`sysctl fs.file-max`で参照できる。OSを再起動すると元に戻るが、設定ファイルに記述することで再起動後も自動再設定される。nginxを含むすべてのプロセスが影響を受ける。
+例 `sysctl fs.file-max | sudo tee /etc/sysctl.dfile-max.conf fs.file-max = 320000`  
+実際に使えるファイルディスクリプタの最大数はsysctlのfs.file-maxとlimitで小さい方になる。
+`/etc/systemd/system/nginx.service.d/nofile.conf`の`LimitNOFILE=infinity`とすると無制限になる。
+* workerの動作方法に関する設定
+  * worker_priority: nice値を設定する。〜20までの整数で低いほど優先度が高くなる。
+  * worker_cpu_affinity: workerが使用するCPUコアを制限する。通常設定する必要はないが、重要なプロセスと分離したいときや、使うCPUを指定したいときにworker毎に0/1で指定する。例えばworker_processesが４の場合、`0001 0010 0100 1000`と指定すると全て異なるコアを使うようになる。`auto`と指定すると自動的に別々のコアに結びつける設定になる。
 
 静的ファイルの配信をアプリケーションサーバーからnginx経由で行うように切り替えることでアプリケーションサーバーへの負荷を減らす。
 ``` /etc/nginx/sites-available/isucon.conf
@@ -115,8 +157,16 @@ server {
 ```
 公開するディレクトリをURLのパスにマッピングしている。
 
-## 3. nginxを活用した高速化手法
 ### 3.1 転送時のデータ圧縮
+
+| ディレクティブ | 概要 |
+| -- | -- |
+|gzip| 引数にonを指定するとgzipエンコーディングに対応する。offで無効。デフォルトはoff |
+|gzip_comp_level| 圧縮レベルの指定。１は高速で低圧縮、9は高圧縮だが処理が遅くなる|
+| gzip_types|圧縮対象となるMIMEタイプを追加する。デフォルトはtext/htmlで、`text/html`は常に圧縮の対象となっている。|
+| gzip_min_length |圧縮対象となる最小データサイズを設定。デフォルトは20バイト |
+| gzip_static | あらかじめ圧縮したファイルと使うかどうかを設定する。onにすると圧縮済みファイルがある場合は使う。alwaysにするとクライアントのAccept-Encodingヘッダの値に関わらず必ず圧縮済みファイルを使う。デフォルトはoff|
+|gunzip|gzip_staticがalwaysでクライアントがAccept-Encodingでgzipに対応していない場合、圧縮データを元に戻して応答する。|
 
 ```
 gzip on;
