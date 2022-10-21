@@ -171,7 +171,7 @@ $ docker container start go-container
 $ docker cp inventory.go go-container:/go/src
 $ docker container attach go-container
 # cd /go/src
-# go run intentory.go
+# go run inventory.go
 ```
 
 Pros:
