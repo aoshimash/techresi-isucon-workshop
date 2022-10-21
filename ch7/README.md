@@ -138,7 +138,7 @@ Cons:
 ```
 $ docker container run --name go-container -it golang &
 $ docker cp broker.go go-container:/go/src
-$ docker container attach
+$ docker container attach go-container
 # cd src
 # go run broker.go
 ```
