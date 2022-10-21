@@ -55,7 +55,7 @@ func main() {
 	mCache := NewCache()
 	// 最初はデフォルト値が返る
 	log.Println(mCache.Get(3))
-	time.Sleep(time.Second)
+	time.Sleep(time.Second * 2)
 	// 次は更新されている
 	log.Println(mCache.Get(3))
 }
