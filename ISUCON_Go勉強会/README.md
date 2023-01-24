@@ -84,18 +84,18 @@
 
 ### 参考
 
-[12q1](https://github.com/isucon/isucon12-qualify/blob/main/webapp/go/isuports.go)
-[12q2](https://github.com/isucon/isucon12-qualify/blob/main/webapp/go/sqltrace.go)
-[12f1](https://github.com/isucon/isucon12-final/blob/main/webapp/go/main.go)
-[12f2](https://github.com/isucon/isucon12-final/blob/main/webapp/go/admin.go)
-[11q](https://github.com/isucon/isucon11-qualify/blob/main/webapp/go/main.go)
-[11f1](https://github.com/isucon/isucon11-final/blob/main/webapp/go/main.go)
-[11f2](https://github.com/isucon/isucon11-final/blob/main/webapp/go/db.go
-[11f3](https://github.com/isucon/isucon11-final/blob/main/webapp/go/util.go)
-[10q](https://github.com/isucon/isucon10-qualify/blob/master/webapp/go/main.go)
-[10f1](https://github.com/isucon/isucon10-final/blob/master/webapp/golang/notifier.go)
-[10f2](https://github.com/isucon/isucon10-final/blob/master/webapp/golang/db.go)
-[10f3]()
+- [12q1](https://github.com/isucon/isucon12-qualify/blob/main/webapp/go/isuports.go)
+- [12q2](https://github.com/isucon/isucon12-qualify/blob/main/webapp/go/sqltrace.go)
+- [12f1](https://github.com/isucon/isucon12-final/blob/main/webapp/go/main.go)
+- [12f2](https://github.com/isucon/isucon12-final/blob/main/webapp/go/admin.go)
+- [11q](https://github.com/isucon/isucon11-qualify/blob/main/webapp/go/main.go)
+- [11f1](https://github.com/isucon/isucon11-final/blob/main/webapp/go/main.go)
+- [11f2](https://github.com/isucon/isucon11-final/blob/main/webapp/go/db.go)
+- [11f3](https://github.com/isucon/isucon11-final/blob/main/webapp/go/util.go)
+- [10q](https://github.com/isucon/isucon10-qualify/blob/master/webapp/go/main.go)
+- [10f1](https://github.com/isucon/isucon10-final/blob/master/webapp/golang/notifier.go)
+-[10f2](https://github.com/isucon/isucon10-final/blob/master/webapp/golang/db.go)
+- [10f3](https://github.com/isucon/isucon10-final/blob/master/webapp/golang/types.go)
 
 ## Reference
 ### [達人が教えるWebパフォーマンスチューニング　〜ISUCONから学ぶ高速化の実践](https://amzn.to/3A3cZI8)
