@@ -1,5 +1,5 @@
 # Writing Web Applications
-[https://go.dev/doc/articles/wiki/ の日本語訳 + 問題
+https://go.dev/doc/articles/wiki/ の日本語訳 + 問題
 
 ## Introduction
 
