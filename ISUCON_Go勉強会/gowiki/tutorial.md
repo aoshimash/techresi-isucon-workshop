@@ -22,10 +22,9 @@
 
 Go をインストールします（[インストール方法](https://go.dev/doc/install)を参照してください）。
 
-`GOPATH` の中にこのチュートリアル用の新しいディレクトリを作り、そこに `cd` します。
+環境変数 `GOPATH` に現在のディレクトリ `gowiki` を追加します (docker の場合は不要):
 ```
-$ mkdir gowiki
-$ cd gowiki
+$ GOPATH=${GOPATH}:${PWD}
 ```
 
 `wiki.go` という名前のファイルを作成し、好きなエディタで開いて、以下の行を追加します。
@@ -39,6 +38,48 @@ import (
 ```
 
 Go 標準ライブラリから `fmt` と `os` のパッケージをインポートしています。その後、追加機能を実装する際には、この `import` 宣言にさらにパッケージを追加していくことになります。
+
+### Go basics
+`go_basics.go` を開き中身を見てください。実行するには以下のコマンドを実行します:
+```
+$ docker run -v ${PWD}:/go -it --rm golang:1.19
+# go build go_basics.go
+# ./go_basics
+```
+ローカルに Go の実行環境があるなら、以下をそのまま実行します:
+```
+$ go build go_basics.go
+$ ./go_basics
+```
+
+次のような出力が見れるはずです:
+```
+5 3.14 I'm a perfect human
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+I'm not a human
+3
+I'm Shiba, named Taro and 7 years old.
+Taro is still young!
+42
+21
+73
+[2 3 5 7 11 13]
+index 0, value 2
+index 1, value 3
+index 2, value 5
+index 3, value 7
+index 4, value 11
+index 5, value 13
+```
 
 ## Data structures
 
