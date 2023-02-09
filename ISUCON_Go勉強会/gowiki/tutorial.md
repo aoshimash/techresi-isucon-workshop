@@ -148,6 +148,14 @@ func main() {
 このコードをコンパイルして実行すると、`p1` の内容を含む`TestPage.txt` という名前のファイルが作成されます。このファイルを構造体 `p2` に読み込んで、その `Body` を画面に表示します。
 
 このプログラムをコンパイルして実行するには、次のようにします。
+Docker:
+```
+$ docker run -v ${PWD}:/go -it --rm -p 8080:8080 golang:1.19
+# go build wiki.go
+# ./wiki
+```
+
+Local:
 ```
 $ go build wiki.go
 $ ./wiki
@@ -237,8 +245,19 @@ func main() {
 
 test.txt をエディタで開き、"Hello world" という文字列 (引用符なし) をその中に保存します。
 
+Docker:
+```
+$ docker run -v ${PWD}:/go -it --rm -p 8080:8080 golang:1.19
+# go build wiki.go
+# ./wiki
+```
+
+Local:
+```
 $ go build wiki.go
 $ ./wiki
+```
+
 (Windowsを使用している場合、プログラムを実行するには、"./"なしで "wiki "と入力する必要があります)
 
 このウェブサーバーが動いている状態で、http://localhost:8080/view/test にアクセスすると、"Hello world" という単語を含む "test" というタイトルのページが表示されるはずです。
@@ -647,6 +666,14 @@ func saveHandler(w http.ResponseWriter, r *http.Request, title string) {
 ## Try it out!
 コードを再コンパイルし、アプリを実行してみましょう:
 
+Docker:
+```
+$ docker run -v ${PWD}:/go -it --rm -p 8080:8080 golang:1.19
+# go build wiki.go
+# ./wiki
+```
+
+Local:
 ```
 $ go build wiki.go
 $ ./wiki
