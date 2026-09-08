@@ -62,7 +62,7 @@
 ### 外部パッケージ
 | パッケージ | 年 | 用途 |
 | --- | --- | --- |
-|github.com/dgrijalva/jwt-go|11q|JWTを扱う|
+|[github.com/dgrijalva/jwt-go]()|11q|JWTを扱う|
 |github.com/go-sql-driver/mysql|12q,12f,11q,11f,10q|MySQLを扱う|
 |github.com/gofrs/flock|12q|ファイルロックを扱う|
 |github.com/golang/protobuf/proto|10f|Protocol Buffersを扱う|
@@ -94,7 +94,7 @@
 - [11f3](https://github.com/isucon/isucon11-final/blob/main/webapp/go/util.go)
 - [10q](https://github.com/isucon/isucon10-qualify/blob/master/webapp/go/main.go)
 - [10f1](https://github.com/isucon/isucon10-final/blob/master/webapp/golang/notifier.go)
--[10f2](https://github.com/isucon/isucon10-final/blob/master/webapp/golang/db.go)
+- [10f2](https://github.com/isucon/isucon10-final/blob/master/webapp/golang/db.go)
 - [10f3](https://github.com/isucon/isucon10-final/blob/master/webapp/golang/types.go)
 
 ## Reference
